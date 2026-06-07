@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CP Path Viewer</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@400;700;800&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:        #0d0f14;
+    --panel:     #141720;
+    --border:    #252a38;
+    --accent:    #4af0a8;
+    --accent2:   #f04a7a;
+    --accent3:   #f0c44a;
+    --text:      #cdd6f4;
+    --dim:       #6c7086;
+    --canvas-bg: #1a1e2e;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    min-height: 100vh;
+    display: grid;
+    grid-template-rows: auto 1fr;
+    overflow: hidden;
+  }
+  header {
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: var(--panel);
+    flex-shrink: 0;
+  }
+  header h1 { font-family:'Syne',sans-serif; font-weight:800; font-size:1.15rem; letter-spacing:-0.02em; color:var(--accent); }
+  header .sub { font-size:0.65rem; color:var(--dim); letter-spacing:0.08em; text-transform:uppercase; }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    min-height: 0;
+    height: 100%;
+  }
+
+  /* ── sidebar ── */
+  .sidebar {
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-height: 0;
+  }
+  .sidebar-section { padding: 14px 16px; border-bottom: 1px solid var(--border); flex-shrink:0; }
+  .sidebar-section label { font-size:0.6rem; letter-spacing:0.12em; text-transform:uppercase; color:var(--dim); display:block; margin-bottom:8px; }
+
+  .btn {
+    width:100%; padding:8px; background:var(--accent); color:#0d0f14;
+    border:none; border-radius:5px; font-family:'Syne',sans-serif; font-weight:700;
+    font-size:0.82rem; letter-spacing:0.04em; cursor:pointer; transition:opacity 0.15s;
+    margin-bottom: 6px;
+  }
+  .btn:hover { opacity:0.85; }
+  .btn:disabled { opacity:0.35; cursor:not-allowed; }
+  .btn-sec {
+    background:transparent; border:1px solid var(--accent); color:var(--accent);
+  }
+  .btn-sec:hover { background:rgba(74,240,168,0.07); opacity:1; }
+  .btn-danger { border-color:var(--accent2); color:var(--accent2); }
+  .btn-danger:hover { background:rgba(240,74,122,0.07); }
+
+  .status-box { padding:10px 16px; flex-shrink:0; font-size:0.7rem; line-height:1.5; border-bottom:1px solid var(--border); }
+  .tag { display:inline-block; padding:1px 6px; border-radius:3px; font-size:0.6rem; font-weight:700; letter-spacing:0.06em; margin-right:4px; }
+  .tag-ok   { background:rgba(74,240,168,.18); color:var(--accent); }
+  .tag-err  { background:rgba(240,74,122,.18); color:var(--accent2); }
+  .tag-info { background:rgba(74,122,240,.18); color:#7ab4f0; }
+  .tag-warn { background:rgba(240,196,74,.18); color:var(--accent3); }
+
+  #progress-bar-wrap { display:none; width:100%; background:var(--border); border-radius:3px; height:3px; margin-top:6px; overflow:hidden; }
+  #progress-bar { height:100%; background:var(--accent); width:0%; transition:width 0.15s; }
+  #file-input { display:none; }
+
+  /* ── search spinner ── */
+  .search-spinner {
+    display: none;
+    width: 14px; height: 14px;
+    border: 2px solid rgba(74,240,168,0.25);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    flex-shrink: 0;
+  }
+  .search-spinner.active { display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Vertex input as equation ── */
+  .coord-section { margin-bottom: 10px; }
+  .coord-label { font-size:0.6rem; letter-spacing:0.1em; text-transform:uppercase; color:var(--accent3); margin-bottom:6px; display:block; }
+  .equation-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.82rem;
+    color: var(--dim);
+    margin-bottom: 4px;
+  }
+  .equation-row .eq-var { color: var(--text); font-weight: 600; min-width: 12px; }
+  .equation-row .eq-sym { color: var(--dim); user-select: none; flex-shrink: 0; }
+  .equation-row .eq-frac { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+  .equation-row .eq-frac-num {
+    display: flex; align-items: center; gap: 3px;
+    border-bottom: 1px solid var(--dim); padding-bottom: 2px;
+  }
+  .equation-row .eq-frac-den { display: flex; align-items: center; }
+  .eq-input {
+    background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    font-family: 'JetBrains Mono', monospace; font-size: 0.82rem;
+    padding: 3px 5px; border-radius: 4px; width: 46px; outline: none;
+    transition: border-color 0.15s; text-align: center;
+  }
+  .eq-input:focus { border-color: var(--accent); }
+  .eq-input.err { border-color: var(--accent2); }
+  .eq-sqrt { color: var(--accent3); font-size: 0.78rem; user-select:none; flex-shrink:0; }
+  .formula-display { font-size:0.68rem; color:var(--dim); margin-top:8px; min-height:1.2em; }
+  .formula-display em { color:var(--accent3); font-style:normal; }
+
+  /* ── main grid area ── */
+  .main { display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+  .grid-toolbar {
+    padding: 8px 16px; display: flex; align-items: center; gap: 12px;
+    border-bottom: 1px solid var(--border); background: var(--panel);
+    font-size: 0.7rem; flex-shrink: 0;
+  }
+  .grid-toolbar .info { color:var(--accent); font-weight:700; }
+  .grid-toolbar .xform { font-size:0.62rem; padding:2px 7px; background:rgba(240,196,74,.15); color:var(--accent3); border-radius:3px; border:1px solid rgba(240,196,74,.25); }
+  .grid-toolbar .dim { color:var(--dim); font-size:0.65rem; }
+
+  /* ── step grid — canvas-bg fills the whole scroll area ── */
+  .grid-scroll {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 20px;
+    min-height: 0;
+    background: var(--canvas-bg);
+  }
+  .grid-scroll::-webkit-scrollbar { width:6px; }
+  .grid-scroll::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.12); border-radius:3px; }
+
+  .step-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 20px;
+  }
+
+  /* step card: canvas flush on the blue bg, label below */
+  .step-card {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 7px;
+  }
+  .step-card canvas {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 5px;
+  }
+  /* final step: no special border */
+  .step-card.final canvas {
+  }
+  .step-label {
+    font-size: 0.72rem;
+    color: rgba(255,255,255,0.85);
+    line-height: 1.4;
+    padding-left: 1px;
+  }
+  .step-label .step-num {
+    color: #fff;
+    font-weight: 700;
+    margin-right: 6px;
+  }
+
+  /* empty state sits on the blue bg */
+  .empty-state { text-align:center; color:rgba(255,255,255,0.3); font-size:0.82rem; line-height:2.2; padding:60px 20px; }
+  .empty-state .big { font-family:'Syne',sans-serif; font-size:3rem; color:rgba(255,255,255,0.1); display:block; margin-bottom:12px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>CP Path Viewer</h1>
+  <span class="sub">crease-pattern tree · Z[√2] geometry</span>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <label>Checkpoint files (gen_N/nodes.ndjson)</label>
+      <button class="btn btn-sec" onclick="document.getElementById('file-input').click()">📂 Load ndjson(s)</button>
+      <button class="btn btn-sec btn-danger" onclick="clearTree()">🗑 Clear tree</button>
+      <input type="file" id="file-input" accept=".json,.ndjson" multiple>
+      <div id="tree-status" style="font-size:0.66rem;color:var(--dim);margin-top:4px">No tree loaded</div>
+      <div id="progress-bar-wrap"><div id="progress-bar"></div></div>
+      <div id="load-detail" style="font-size:0.6rem;color:var(--dim);margin-top:4px;line-height:1.6"></div>
+    </div>
+
+    <div class="sidebar-section">
+      <label>Target vertex</label>
+
+      <div class="coord-section">
+        <span class="coord-label">x-coordinate</span>
+        <div class="equation-row">
+          <span class="eq-var">x</span>
+          <span class="eq-sym">=</span>
+          <div class="eq-frac">
+            <div class="eq-frac-num">
+              <input class="eq-input" type="number" id="ax" value="2" step="1" title="a">
+              <span class="eq-sym">+</span>
+              <input class="eq-input" type="number" id="bx" value="-1" step="1" title="b">
+              <span class="eq-sqrt">√2</span>
+            </div>
+            <div class="eq-frac-den">
+              <input class="eq-input" type="number" id="cx" value="1" step="1" min="1" title="c (≥1)">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="coord-section">
+        <span class="coord-label">y-coordinate</span>
+        <div class="equation-row">
+          <span class="eq-var">y</span>
+          <span class="eq-sym">=</span>
+          <div class="eq-frac">
+            <div class="eq-frac-num">
+              <input class="eq-input" type="number" id="ay" value="0" step="1" title="a">
+              <span class="eq-sym">+</span>
+              <input class="eq-input" type="number" id="by" value="1" step="1" title="b">
+              <span class="eq-sqrt">√2</span>
+            </div>
+            <div class="eq-frac-den">
+              <input class="eq-input" type="number" id="cy" value="2" step="1" min="1" title="c (≥1)">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="formula-display" id="formula-disp">—</div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:nowrap;overflow:hidden;">
+        <button class="btn" id="search-btn" onclick="doSearch()" style="margin-bottom:0;flex:1;min-width:0">Search</button>
+        <button class="btn btn-sec" onclick="randomize()" style="margin-bottom:0;flex:1;padding:8px 10px" title="Random vertex">Random</button>
+        <div class="search-spinner" id="search-spinner" style="flex-shrink:0"></div>
+      </div>
+    </div>
+
+    <div class="status-box" id="status-box">
+      <span class="tag tag-info">IDLE</span> Ready.
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="grid-toolbar" id="grid-toolbar">
+      <span class="info" id="toolbar-info">—</span>
+      <span class="xform" id="toolbar-xform" style="display:none"></span>
+      <span class="dim" id="toolbar-dim"></span>
+    </div>
+    <div class="grid-scroll" id="grid-scroll">
+      <div class="empty-state">
+        <span class="big">◇</span>
+        Load one or more <code>gen_N/nodes.ndjson</code> files,<br>
+        then enter a target vertex and hit Search.<br>
+        All path steps will appear here as a grid.
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════════════════════════════
+// Z[√2] math
+// ═══════════════════════════════════════════════════════════════════════
+function gcd(a,b){a=Math.abs(a);b=Math.abs(b);while(b){[a,b]=[b,a%b];}return a||1;}
+function lcm(a,b){return Math.abs(a*b)/gcd(a,b);}
+const Z2={
+  reduce([p,q,d]){if(d<0){p=-p;q=-q;d=-d;}if(p===0&&q===0)return[0,0,1];const g=gcd(gcd(Math.abs(p),Math.abs(q)),d);return[p/g,q/g,d/g];},
+  zero:()=>[0,0,1],one:()=>[1,0,1],
+  eq([p,q,d],[r,s,e]){return p*e===r*d&&q*e===s*d;},
+  isZero([p,q,d]){return p===0&&q===0;},
+  add([p,q,d],[r,s,e]){const l=lcm(d,e);return Z2.reduce([p*(l/d)+r*(l/e),q*(l/d)+s*(l/e),l]);},
+  sub([p,q,d],[r,s,e]){const l=lcm(d,e);return Z2.reduce([p*(l/d)-r*(l/e),q*(l/d)-s*(l/e),l]);},
+  mul([p,q,d],[r,s,e]){return Z2.reduce([p*r+2*q*s,p*s+q*r,d*e]);},
+  neg([p,q,d]){return[-p,-q,d];},
+  div([p,q,d],[r,s,e]){const n=r*r-2*s*s;if(n===0)return null;return Z2.reduce([(p*r-2*q*s)*e,(q*r-p*s)*e,d*n]);},
+  toFloat([p,q,d]){return(p+q*Math.SQRT2)/d;},
+};
+const Vx=v=>[v[0],v[1],v[2]];
+const Vy=v=>[v[3],v[4],v[5]];
+const Veq=(v,w)=>Z2.eq(Vx(v),Vx(w))&&Z2.eq(Vy(v),Vy(w));
+const VtoFloat=v=>[Z2.toFloat(Vx(v)),Z2.toFloat(Vy(v))];
+
+// ═══════════════════════════════════════════════════════════════════════
+// D4 transforms — exact match to CPState._d4 in rbb2.js
+//   0 r0:   (x,   y)      self-inverse
+//   1 r90:  (1-y, x)      inverse is r270
+//   2 r180: (1-x, 1-y)    self-inverse
+//   3 r270: (y,   1-x)    inverse is r90
+//   4 fx:   (x,   1-y)    self-inverse
+//   5 fy:   (1-x, y)      self-inverse
+//   6 fd1:  (y,   x)      self-inverse
+//   7 fd2:  (1-y, 1-x)    self-inverse
+// ═══════════════════════════════════════════════════════════════════════
+function applyD4Ti(v, ti) {
+  const x=Vx(v), y=Vy(v), one=[1,0,1];
+  const ox=Z2.reduce(Z2.sub(one,x));
+  const oy=Z2.reduce(Z2.sub(one,y));
+  const rx=Z2.reduce(x), ry=Z2.reduce(y);
+  const all=[
+    [...rx,...ry],   // 0 r0:   (x,   y)
+    [...oy,...rx],   // 1 r90:  (1-y, x)
+    [...ox,...oy],   // 2 r180: (1-x, 1-y)
+    [...ry,...ox],   // 3 r270: (y,   1-x)
+    [...rx,...oy],   // 4 fx:   (x,   1-y)
+    [...ox,...ry],   // 5 fy:   (1-x, y)
+    [...ry,...rx],   // 6 fd1:  (y,   x)
+    [...oy,...ox],   // 7 fd2:  (1-y, 1-x)
+  ];
+  return all[ti];
+}
+
+// Inverse D4 index: r90↔r270, all others self-inverse
+const D4_INV = [0, 3, 2, 1, 4, 5, 6, 7];
+
+function d4Transforms(v){
+  return [0,1,2,3,4,5,6,7].map(ti=>applyD4Ti(v,ti));
+}
+const D4_NAMES=['r0','r90','r180','r270','fx','fy','fd1','fd2'];
+
+// Search: for each node, check if any of the 8 D4 variants of the target
+// appears in node.vertices.  Returns the transform index ti, or -1.
+function nodeMatchesAny(node, transforms) {
+  for (let ti = 0; ti < transforms.length; ti++) {
+    const t = transforms[ti];
+    for (const v of node.vertices) {
+      const rv = [...Z2.reduce(Vx(v)), ...Z2.reduce(Vy(v))];
+      if (Z2.eq(Vx(rv), Vx(t)) && Z2.eq(Vy(rv), Vy(t))) return ti;
+    }
+  }
+  return -1;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Parse label to find which vertex indices and crease pairs to highlight.
+// Returns { verts: Set<number>, creases: Set<string> }
+// where creases contains "i-j" keys (i<j) of crease pairs to highlight.
+// ═══════════════════════════════════════════════════════════════════════
+function parseLabelHighlights(label) {
+  const result = { verts: new Set(), creases: new Set(), bisect: null, bisectMain: null };
+  if (!label) return result;
+
+  // "crease vi-vj"  e.g. "crease 3-7"
+  let m = label.match(/^crease\s+(\d+)-(\d+)$/);
+  if (m) {
+    result.verts.add(parseInt(m[1]));
+    result.verts.add(parseInt(m[2]));
+    return result;
+  }
+
+  // "vertical through v#" or "horizontal through v#"
+  m = label.match(/(?:vertical|horizontal)\s+through\s+v(\d+)/);
+  if (m) {
+    result.verts.add(parseInt(m[1]));
+    return result;
+  }
+
+  // "bisect-v A,B" or "bisect-h A,B"
+  m = label.match(/^bisect-([vh])\s+(.+),(.+)$/);
+  if (m) {
+    result.bisect = { axis: m[1], v1str: m[2].trim(), v2str: m[3].trim() };
+    return result;
+  }
+
+  // "bisect-main-A/B/C/D" or "bisect-anti-A/B/C/D"
+  m = label.match(/^bisect-(main|anti)-([ABCD])$/);
+  if (m) {
+    result.bisectMain = { type: m[1], variant: m[1] === 'anti' ? `anti-${m[2]}` : m[2], rawLabel: label };
+    return result;
+  }
+
+  return result;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Tree storage
+// ═══════════════════════════════════════════════════════════════════════
+let nodeById = new Map();
+let maxDepthLoaded = -1;
+let totalNodes = 0;
+
+// ═══════════════════════════════════════════════════════════════════════
+// Streaming NDJSON loader
+// ═══════════════════════════════════════════════════════════════════════
+async function streamNdjson(file, onNode) {
+  const decoder = new TextDecoder();
+  let buf = '';
+  let count = 0;
+  const stream = file.stream ? file.stream() : new Response(file).body;
+  const reader = stream.getReader();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let nl;
+    while ((nl = buf.indexOf('\n')) !== -1) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!line) continue;
+      try {
+        const node = JSON.parse(line);
+        if (node && typeof node.id === 'number') { onNode(node); count++; }
+      } catch { }
+    }
+    if (count % 5000 === 0) await new Promise(r => setTimeout(r, 0));
+  }
+  buf = buf.trim();
+  if (buf) {
+    try {
+      const node = JSON.parse(buf);
+      if (node && typeof node.id === 'number') { onNode(node); count++; }
+    } catch {}
+  }
+  return count;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// File loading
+// ═══════════════════════════════════════════════════════════════════════
+document.getElementById('file-input').addEventListener('change', async e => {
+  const files = [...e.target.files];
+  if (!files.length) return;
+  e.target.value = '';
+  files.sort((a,b) => a.name.localeCompare(b.name, undefined, {numeric:true}));
+  showProgress(true);
+  const detail = document.getElementById('load-detail');
+  let errors = 0;
+  for (let fi = 0; fi < files.length; fi++) {
+    const file = files[fi];
+    setStatus('info', `Loading ${fi+1}/${files.length}: ${file.name} (${fmtBytes(file.size)})…`);
+    detail.textContent = '';
+    await new Promise(r => setTimeout(r, 0));
+    try {
+      const peek = await file.slice(0, 512).text();
+      const firstLine = peek.split('\n').find(l => l.trim()) || '';
+      const isNdjson = firstLine.trim().startsWith('{');
+      let added = 0;
+      if (isNdjson) {
+        added = await streamNdjson(file, node => {
+          nodeById.set(node.id, node);
+          if ((node.depth ?? 0) > maxDepthLoaded) maxDepthLoaded = node.depth ?? 0;
+          totalNodes++;
+          if (totalNodes % 10000 === 0) detail.textContent = `  …${fmt(totalNodes)} nodes so far`;
+        });
+      } else {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        const arr = Array.isArray(data) ? data : (data.nodes || data.path || [data]);
+        for (const node of arr) {
+          if (node && typeof node.id === 'number') {
+            nodeById.set(node.id, node);
+            if ((node.depth ?? 0) > maxDepthLoaded) maxDepthLoaded = node.depth ?? 0;
+            totalNodes++;
+            added++;
+          }
+        }
+      }
+      detail.textContent = `  ✓ ${file.name}: ${fmt(added)} nodes`;
+    } catch(err) {
+      errors++;
+      setStatus('err', `Error in ${file.name}: ${err.message}`);
+      detail.textContent = `  ✗ ${file.name}: ${err.message}`;
+    }
+  }
+  showProgress(false);
+  updateTreeStatus();
+  if (errors === 0)
+    setStatus('ok', `${files.length} file(s) loaded — ${fmt(totalNodes)} nodes total, depth 0–${maxDepthLoaded}.`);
+  else
+    setStatus('warn', `Done with ${errors} error(s) — ${fmt(totalNodes)} nodes loaded.`);
+});
+
+function clearTree() {
+  nodeById = new Map();
+  maxDepthLoaded = -1;
+  totalNodes = 0;
+  document.getElementById('load-detail').textContent = '';
+  updateTreeStatus();
+  setStatus('info', 'Tree cleared.');
+}
+function updateTreeStatus() {
+  document.getElementById('tree-status').textContent =
+    totalNodes === 0
+      ? 'No tree loaded'
+      : `✓ ${fmt(totalNodes)} nodes  ·  depth 0–${maxDepthLoaded}`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Formula display + input validation
+// ═══════════════════════════════════════════════════════════════════════
+function inUnitZ2(a, b, c) {
+  if (c === 0) return false;
+  const f = Z2.toFloat(Z2.reduce([a, b, c]));
+  return f >= -1e-10 && f <= 1 + 1e-10;
+}
+function updateFormula() {
+  const ax=+document.getElementById('ax').value||0, bx=+document.getElementById('bx').value||0;
+  let cx = parseInt(document.getElementById('cx').value); if (cx < 1 || !isFinite(cx)) cx = 1;
+  const ay=+document.getElementById('ay').value||0, by=+document.getElementById('by').value||0;
+  let cy = parseInt(document.getElementById('cy').value); if (cy < 1 || !isFinite(cy)) cy = 1;
+  const xOk = inUnitZ2(ax, bx, cx), yOk = inUnitZ2(ay, by, cy);
+  ['ax','bx','cx'].forEach(id => document.getElementById(id).classList.toggle('err', !xOk));
+  ['ay','by','cy'].forEach(id => document.getElementById(id).classList.toggle('err', !yOk));
+  try {
+    const xf = Z2.toFloat(Z2.reduce([ax,bx,cx])), yf = Z2.toFloat(Z2.reduce([ay,by,cy]));
+    const warn = (!xOk||!yOk) ? ' <span style="color:var(--accent2)">⚠ out of [0,1]</span>' : '';
+    document.getElementById('formula-disp').innerHTML = `x ≈ <em>${xf.toFixed(6)}</em>  y ≈ <em>${yf.toFixed(6)}</em>${warn}`;
+  } catch { document.getElementById('formula-disp').textContent = '—'; }
+}
+['cx','cy'].forEach(id => {
+  document.getElementById(id).addEventListener('blur', () => {
+    const v = parseInt(document.getElementById(id).value);
+    if (!isFinite(v) || v < 1) document.getElementById(id).value = 1;
+    updateFormula();
+  });
+  document.getElementById(id).addEventListener('input', () => {
+    const v = parseInt(document.getElementById(id).value);
+    if (v < 1) document.getElementById(id).value = 1;
+    updateFormula();
+  });
+});
+['ax','bx','ay','by'].forEach(id => document.getElementById(id).addEventListener('input', updateFormula));
+updateFormula();
+
+// ═══════════════════════════════════════════════════════════════════════
+// Search
+// ═══════════════════════════════════════════════════════════════════════
+let currentPath = [];
+let targetVertex = null;
+let transformName = '';
+let currentTransformIdx = 0;
+let drawTransformIdx = 0; // inverse of match transform, used for display
+
+async function doSearch() {
+  const ax=+document.getElementById('ax').value, bx=+document.getElementById('bx').value;
+  let cx = parseInt(document.getElementById('cx').value); if (cx < 1) cx = 1;
+  const ay=+document.getElementById('ay').value, by=+document.getElementById('by').value;
+  let cy = parseInt(document.getElementById('cy').value); if (cy < 1) cy = 1;
+  if (!inUnitZ2(ax,bx,cx) || !inUnitZ2(ay,by,cy)) {
+    setStatus('err', 'Coordinates must be in [0, 1]. Fix the red inputs.');
+    return;
+  }
+  if (nodeById.size === 0) {
+    setStatus('err', 'No tree loaded. Load checkpoint ndjson files first.');
+    return;
+  }
+
+  const target = [...Z2.reduce([ax,bx,cx]), ...Z2.reduce([ay,by,cy])];
+  targetVertex = target;
+  const transforms = d4Transforms(target);
+
+  setStatus('info', `Searching ${fmt(nodeById.size)} nodes…`);
+  document.getElementById('search-btn').disabled = true;
+  document.getElementById('search-spinner').classList.add('active');
+  await new Promise(r => setTimeout(r, 10));
+
+  let matchedNode = null, matchedTi = -1;
+  for (const node of nodeById.values()) {
+    const ti = nodeMatchesAny(node, transforms);
+    if (ti >= 0) { matchedNode = node; matchedTi = ti; break; }
+  }
+
+  document.getElementById('search-btn').disabled = false;
+  document.getElementById('search-spinner').classList.remove('active');
+
+  if (!matchedNode) {
+    setStatus('err', `Not found in ${fmt(nodeById.size)} nodes. Try loading more generations.`);
+    showGrid([]);
+    return;
+  }
+
+  transformName = D4_NAMES[matchedTi];
+  currentTransformIdx = matchedTi;
+  // Drawing uses the INVERSE transform so the CP orients toward the target.
+  // r90 and r270 are each other's inverses; all others are self-inverse.
+  drawTransformIdx = D4_INV[matchedTi];
+
+  setStatus('ok', `Found! Node #${matchedNode.id}  depth=${matchedNode.depth}  transform=${transformName}`);
+
+  const pathNodes = [];
+  let cur = matchedNode;
+  while (cur) {
+    pathNodes.unshift(cur);
+    if (cur.parentId == null) break;
+    const parent = nodeById.get(cur.parentId);
+    if (!parent) break;
+    cur = parent;
+  }
+
+  currentPath = pathNodes;
+  showGrid(pathNodes);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Grid rendering
+// ═══════════════════════════════════════════════════════════════════════
+function showGrid(pathNodes) {
+  const scroll   = document.getElementById('grid-scroll');
+  const toolbar  = document.getElementById('toolbar-info');
+  const xformEl  = document.getElementById('toolbar-xform');
+  const dimEl    = document.getElementById('toolbar-dim');
+
+  if (!pathNodes.length) {
+    scroll.innerHTML = '<div class="empty-state"><span class="big">◇</span>No result.</div>';
+    toolbar.textContent = '—';
+    xformEl.style.display = 'none';
+    return;
+  }
+
+  const total = pathNodes.length;
+  toolbar.textContent = `${total} step${total!==1?'s':''} in path`;
+  xformEl.textContent = transformName;
+  xformEl.style.display = transformName ? '' : 'none';
+  const last = pathNodes[total-1];
+  dimEl.textContent = `node #${last.id}  ·  depth ${last.depth}`;
+
+  const grid = document.createElement('div');
+  grid.className = 'step-grid';
+
+  // Skip root (index 0), start rendering from index 1
+  const stepsToShow = pathNodes.slice(1);
+
+  stepsToShow.forEach((node, i) => {
+    const stepNum = i + 1; // displayed step number (1-based)
+    const card = document.createElement('div');
+    card.className = 'step-card';
+
+    const canvas = document.createElement('canvas');
+    const SZ = 240;
+    canvas.width = SZ;
+    canvas.height = SZ;
+    card.appendChild(canvas);
+
+    // Step label — human-readable description
+    const lbl = document.createElement('div');
+    lbl.className = 'step-label';
+    lbl.innerHTML = `<span class="step-num">${stepNum}.</span><span style="color:rgba(255,255,255,0.7)">${humanLabel(node.label)}</span>`;
+    card.appendChild(lbl);
+
+    grid.appendChild(card);
+    requestAnimationFrame(() => drawCP(canvas, node, false, SZ, drawTransformIdx));
+  });
+
+  // Synthetic final step: highlight the target vertex
+  const finalCard = document.createElement('div');
+  finalCard.className = 'step-card';
+
+  const finalCanvas = document.createElement('canvas');
+  const SZ = 240;
+  finalCanvas.width = SZ;
+  finalCanvas.height = SZ;
+  finalCard.appendChild(finalCanvas);
+
+  const finalLbl = document.createElement('div');
+  finalLbl.className = 'step-label';
+  finalLbl.innerHTML = `<span class="step-num">${stepsToShow.length + 1}.</span><span style="color:rgba(74,240,168,0.9)">Target vertex</span>`;
+  finalCard.appendChild(finalLbl);
+
+  grid.appendChild(finalCard);
+  requestAnimationFrame(() => drawCP(finalCanvas, pathNodes[total-1], true, SZ, drawTransformIdx));
+
+  scroll.innerHTML = '';
+  scroll.appendChild(grid);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Drawing
+// ═══════════════════════════════════════════════════════════════════════
+function drawCP(canvas, node, isFinal, SZ, ti) {
+  const ctx  = canvas.getContext('2d');
+  const PAD  = Math.round(SZ * 0.08);
+  const INNER = SZ - 2 * PAD;
+
+  ctx.fillStyle = '#1a1e2e';
+  ctx.fillRect(0, 0, SZ, SZ);
+
+  // unit square border
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(PAD, PAD, INNER, INNER);
+
+  const toS = (fx, fy) => [PAD + fx * INNER, PAD + (1 - fy) * INNER];
+
+  // Shorten a segment so it doesn't quite reach the square edge
+  // (for previous-step creases)
+  const SHORTEN = 0.03; // fraction of INNER to pull back each end
+  function shortenSeg(x1, y1, x2, y2) {
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.sqrt(dx*dx + dy*dy) || 1;
+    const pull = SHORTEN * INNER;
+    const f = Math.min(pull / len, 0.4);
+    return [x1 + dx*f, y1 + dy*f, x2 - dx*f, y2 - dy*f];
+  }
+
+  const verts   = node.vertices;
+  const creases = node.creases;
+
+  // Apply inverse D4 transform for correct visual orientation
+  const tfpos = verts.map(v => {
+    try { return VtoFloat(applyD4Ti(v, ti)); }
+    catch { return [0, 0]; }
+  });
+
+  // Parse label
+  const hl = parseLabelHighlights(node.label);
+
+  // ── Determine which crease is "new" (the last one added) ──────────────
+  // The last crease in the array is the one just added in this step.
+  const newCreaseIdx = creases.length > 0 ? creases.length - 1 : -1;
+
+  // ── Bisect-v / bisect-h: find matching creases in CANONICAL space ──────
+  // Labels like "bisect-v 1,0" describe x-values in stored (canonical) Z2.
+  // We match against verts[] directly (before any D4 transform) so the
+  // result is rotation-agnostic. The matched crease indices are then drawn
+  // highlighted in whatever orientation the display transform puts them.
+  const highlightedCreaseIdxs = new Set();
+  if (hl.bisect && !isFinal) {
+    const { axis, v1str, v2str } = hl.bisect;
+    const v1f = parseZ2str(v1str), v2f = parseZ2str(v2str);
+    for (let ci = 0; ci < creases.length; ci++) {
+      const [a, b] = creases[ci];
+      if (a >= verts.length || b >= verts.length) continue;
+      // Use canonical (untransformed) float positions for axis matching
+      const [ax0, ay0] = VtoFloat(verts[a]);
+      const [bx0, by0] = VtoFloat(verts[b]);
+      if (axis === 'v') {
+        // vertical in canonical space: both endpoints same x
+        if (Math.abs(ax0 - bx0) < 1e-9) {
+          const xval = ax0;
+          if (Math.abs(xval - v1f) < 1e-9 || Math.abs(xval - v2f) < 1e-9)
+            highlightedCreaseIdxs.add(ci);
+        }
+      } else {
+        // horizontal in canonical space: both endpoints same y
+        if (Math.abs(ay0 - by0) < 1e-9) {
+          const yval = ay0;
+          if (Math.abs(yval - v1f) < 1e-9 || Math.abs(yval - v2f) < 1e-9)
+            highlightedCreaseIdxs.add(ci);
+        }
+      }
+    }
+  }
+
+  // ── bisect-main/anti: highlight the TWO creases being angle-bisected ──
+  // Each bisect-main/anti crease is the bisector of two existing crease-lines
+  // meeting at a corner. We highlight both those source creases.
+  //
+  // main diagonal: (0,0)-(1,1)  anti diagonal: (1,0)-(0,1)
+  // Square edges: bottom (0,0)-(1,0), right (1,0)-(1,1),
+  //               top (0,1)-(1,1),    left  (0,0)-(0,1)
+  //
+  // bisect-main-A: corner (0,0), bisects diagonal + bottom edge
+  // bisect-main-B: corner (0,0), bisects diagonal + left edge
+  // bisect-main-C: corner (1,1), bisects diagonal + right edge
+  // bisect-main-D: corner (1,1), bisects diagonal + top edge
+  // bisect-anti-A: corner (1,0), bisects anti-diagonal + left edge  (goes to (0,rt2-1))
+  // bisect-anti-B: corner (1,0), bisects anti-diagonal + right edge (goes to (2-rt2,1))
+  // bisect-anti-C: corner (0,1), bisects anti-diagonal + bottom edge(goes to (rt2-1,0))
+  // bisect-anti-D: corner (0,1), bisects anti-diagonal + top edge   (goes to (1,2-rt2))
+  const MAIN_DIAG  = [[0,0,1,0,0,1],[1,0,1,1,0,1]]; // (0,0)-(1,1)
+  const ANTI_DIAG  = [[1,0,1,0,0,1],[0,0,1,1,0,1]]; // (1,0)-(0,1)
+  const EDGE_BOT   = [[0,0,1,0,0,1],[1,0,1,0,0,1]]; // (0,0)-(1,0)
+  const EDGE_RIGHT = [[1,0,1,0,0,1],[1,0,1,1,0,1]]; // (1,0)-(1,1)
+  const EDGE_TOP   = [[0,0,1,1,0,1],[1,0,1,1,0,1]]; // (0,1)-(1,1)
+  const EDGE_LEFT  = [[0,0,1,0,0,1],[0,0,1,1,0,1]]; // (0,0)-(0,1)
+
+  const BISECT_MAIN_EDGES = {
+    'bisect-main-A': [MAIN_DIAG, EDGE_BOT],
+    'bisect-main-B': [MAIN_DIAG, EDGE_LEFT],
+    'bisect-main-C': [MAIN_DIAG, EDGE_RIGHT],
+    'bisect-main-D': [MAIN_DIAG, EDGE_TOP],
+    'bisect-anti-A': [ANTI_DIAG, EDGE_LEFT],
+    'bisect-anti-B': [ANTI_DIAG, EDGE_RIGHT],
+    'bisect-anti-C': [ANTI_DIAG, EDGE_BOT],
+    'bisect-anti-D': [ANTI_DIAG, EDGE_TOP],
+  };
+
+  const bisectMainEdgeIdxs = new Set();
+  if (hl.bisectMain && BISECT_MAIN_EDGES[hl.bisectMain.rawLabel]) {
+    for (const [va, vb] of BISECT_MAIN_EDGES[hl.bisectMain.rawLabel]) {
+      const ia = verts.findIndex(v => Z2.eq(Vx(v),Vx(va)) && Z2.eq(Vy(v),Vy(va)));
+      const ib = verts.findIndex(v => Z2.eq(Vx(v),Vx(vb)) && Z2.eq(Vy(v),Vy(vb)));
+      if (ia === -1 || ib === -1) continue;
+      for (let ci = 0; ci < creases.length; ci++) {
+        const [a, b] = creases[ci];
+        if ((a===ia&&b===ib)||(a===ib&&b===ia)) bisectMainEdgeIdxs.add(ci);
+      }
+    }
+  }
+
+  // ── Draw creases ───────────────────────────────────────────────────────
+  const lw = Math.max(0.8, SZ / 280);
+  ctx.lineCap = 'round';
+
+  for (let ci = 0; ci < creases.length; ci++) {
+    const [a, b] = creases[ci];
+    if (a >= tfpos.length || b >= tfpos.length) continue;
+    const [x1, y1] = toS(...tfpos[a]);
+    const [x2, y2] = toS(...tfpos[b]);
+    const isNew = ci === newCreaseIdx && !isFinal;
+    const isHL  = highlightedCreaseIdxs.has(ci);
+    const isMainHL = bisectMainEdgeIdxs.has(ci);
+
+    if (isMainHL && !isFinal) {
+      // white highlight for bisect-main reference edges
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.lineWidth = lw * 2.2;
+      ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+    } else if (isHL && !isFinal) {
+      // white highlight for bisect-v/h reference edges
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.lineWidth = lw * 2.2;
+      ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+    } else if (isNew) {
+      // current step's new crease: bright blue, full length, noticeably thicker
+      ctx.strokeStyle = '#4a7af0';
+      ctx.lineWidth = lw * 2.5;
+      ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+    } else {
+      // previous creases: dimmer and slightly shortened
+      const [sx1,sy1,sx2,sy2] = shortenSeg(x1,y1,x2,y2);
+      ctx.strokeStyle = 'rgba(74,122,240,0.38)';
+      ctx.lineWidth = lw * 0.85;
+      ctx.beginPath(); ctx.moveTo(sx1,sy1); ctx.lineTo(sx2,sy2); ctx.stroke();
+    }
+  }
+
+  // ── Vertex highlights ──────────────────────────────────────────────────
+  const RING_R = Math.max(6, SZ / 30);
+  const RING_W = Math.max(1.5, SZ / 120);
+
+  if (isFinal) {
+    // Solid green filled dot on the matched target vertex — no other highlights
+    for (let vi = 0; vi < verts.length; vi++) {
+      const tv = applyD4Ti(verts[vi], ti);
+      if (Veq(tv, targetVertex)) {
+        const [sx, sy] = toS(...tfpos[vi]);
+        // glow
+        const grd = ctx.createRadialGradient(sx, sy, 0, sx, sy, RING_R * 1.5);
+        grd.addColorStop(0, 'rgba(74,240,168,0.30)');
+        grd.addColorStop(1, 'rgba(74,240,168,0)');
+        ctx.fillStyle = grd;
+        ctx.beginPath(); ctx.arc(sx, sy, RING_R * 2, 0, Math.PI * 2); ctx.fill();
+        // solid dot
+        ctx.fillStyle = '#4af0a8';
+        ctx.beginPath(); ctx.arc(sx, sy, RING_R * .5, 0, Math.PI * 2); ctx.fill();
+        break;
+      }
+    }
+  } else if (hl.verts.size > 0) {
+    // White hollow rings on referenced vertices
+    ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+    ctx.lineWidth = RING_W;
+    for (const vi of hl.verts) {
+      if (vi >= tfpos.length) continue;
+      const [sx, sy] = toS(...tfpos[vi]);
+      ctx.beginPath(); ctx.arc(sx, sy, RING_R, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+}
+
+// ── Human-readable labels for each operation type ─────────────────────
+// Edit these strings to customize the instruction text shown under each step.
+const STEP_DESCRIPTIONS = {
+  // crease through two vertices
+  'crease':        (label) => `Crease through the circled points`,
+  // vertical/horizontal line through a vertex
+  'vertical':      (label) => `Crease through the circled point, perpendicular to the edge `,
+  'horizontal':    (label) => `Crease through the circled point, perpendicular to the edge `,
+  // angle bisectors
+  'bisect-main-A': `Crease an angle bisector`,
+  'bisect-main-B': `Crease an angle bisector`,
+  'bisect-main-C': `Crease an angle bisector`,
+  'bisect-main-D': `Crease an angle bisector`,
+  'bisect-anti-A': `Crease an angle bisector`,
+  'bisect-anti-B': `Crease an angle bisector`,
+  'bisect-anti-C': `Crease an angle bisector`,
+  'bisect-anti-D': `Crease an angle bisector`,
+  // midpoint bisectors
+  'bisect-v':      (label) => `Crease halfway between the highlighted creases`,
+  'bisect-h':      (label) => `Crease halfway between the highlighted creases`,
+  // passthrough
+  'no-bisector':   `(no bisector applied — branch continues unchanged)`,
+};
+
+function humanLabel(rawLabel) {
+  if (!rawLabel) return '';
+  // exact match first
+  if (typeof STEP_DESCRIPTIONS[rawLabel] === 'string') return STEP_DESCRIPTIONS[rawLabel];
+  // prefix match
+  for (const [key, val] of Object.entries(STEP_DESCRIPTIONS)) {
+    if (rawLabel.startsWith(key)) {
+      return typeof val === 'function' ? val(rawLabel) : val;
+    }
+  }
+  return rawLabel; // fallback: show raw label
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Parse a Z2.toString() string back to a float value (for bisect matching)
+// ═══════════════════════════════════════════════════════════════════════
+function parseZ2str(s) {
+  s = s.trim();
+// Check rational a/b BEFORE parseFloat (parseFloat('1/2') = 1 in JS!)
+  let m = s.match(/^(-?\d+)\/(\d+)$/);
+  if (m) return parseInt(m[1]) / parseInt(m[2]);
+  // Try pure number
+  const n = parseFloat(s);
+  if (!isNaN(n) && !s.includes('√')) return n;
+  // "√2" alone
+  if (s === '√2') return Math.SQRT2;
+  if (s === '-√2') return -Math.SQRT2;
+  // "a/b√2"  (no explicit +/-)
+  m = s.match(/^(-?\d+)\/(\d+)√2$/);
+  if (m) return (parseInt(m[1]) / parseInt(m[2])) * Math.SQRT2;
+  // "a/b+c/d√2" or "a/b-c/d√2" — use parseRat to correctly handle fractional b
+  m = s.match(/^(-?\d+(?:\/\d+)?)\s*([+\-])\s*(\d+(?:\/\d+)?)√2$/);
+  if (m) {
+    const parseRat = str => { const sl = str.indexOf('/'); return sl < 0 ? parseInt(str,10) : parseInt(str,10)/parseInt(str.slice(sl+1),10); };
+    return parseRat(m[1]) + (m[2] === '+' ? 1 : -1) * parseRat(m[3]) * Math.SQRT2;
+  }
+  return NaN;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Helpers
+// ═══════════════════════════════════════════════════════════════════════
+function setStatus(type, msg){
+  const tags={ok:'tag-ok',err:'tag-err',info:'tag-info',warn:'tag-warn'};
+  const labels={ok:'FOUND',err:'ERROR',info:'BUSY',warn:'WARN'};
+  document.getElementById('status-box').innerHTML=
+    `<span class="tag ${tags[type]}">${labels[type]}</span>${msg}`;
+}
+
+function showProgress(on){
+  document.getElementById('progress-bar-wrap').style.display=on?'block':'none';
+  if(on){
+    let w=0;
+    clearInterval(showProgress._iv);
+    showProgress._iv=setInterval(()=>{
+      w=Math.min(w+1,92);
+      document.getElementById('progress-bar').style.width=w+'%';
+    },120);
+  } else {
+    clearInterval(showProgress._iv);
+    document.getElementById('progress-bar').style.width='100%';
+    setTimeout(()=>{
+      document.getElementById('progress-bar-wrap').style.display='none';
+      document.getElementById('progress-bar').style.width='0';
+    },400);
+  }
+}
+
+function getRandomInt(n) { return Math.floor(Math.random() * (n + 1)); }
+function randomize() {
+  let valid = false;
+  while (!valid) {
+    const a1 = getRandomInt(4), b1 = getRandomInt(4), c1 = Math.max(1, getRandomInt(4));
+    const a2 = getRandomInt(4), b2 = getRandomInt(4), c2 = Math.max(1, getRandomInt(4));
+    const x = (a1 + b1 * Math.SQRT2) / c1;
+    const y = (a2 + b2 * Math.SQRT2) / c2;
+    if (x >= 0 && x <= 1 && y >= 0 && y <= 1) {
+      document.getElementById('ax').value = a1;
+      document.getElementById('bx').value = b1;
+      document.getElementById('cx').value = c1;
+      document.getElementById('ay').value = a2;
+      document.getElementById('by').value = b2;
+      document.getElementById('cy').value = c2;
+      valid = true;
+    }
+  }
+  updateFormula();
+  doSearch();
+}
+
+function fmt(n){return n.toLocaleString();}
+function fmtBytes(b){return b>1e9?(b/1e9).toFixed(2)+'GB':b>1e6?(b/1e6).toFixed(1)+'MB':(b/1e3).toFixed(0)+'KB';}
+</script>
+</body>
+</html>
